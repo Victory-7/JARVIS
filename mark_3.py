@@ -1,0 +1,164 @@
+import pyttsx3
+import wikipedia
+import speech_recognition as sr
+import webbrowser
+import datetime
+import os
+import sys
+import smtplib
+from transformers import pipeline
+from helpers import speak, takeCommand, weather, cpu, joke, screenshot  # Modularized helpers
+import json
+from textblob import TextBlob
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+import schedule
+import time
+from speech_module import speak, takeCommand
+from weather_module import get_weather
+from news_module import get_top_news
+from sentiment_analysis import analyze_sentiment
+from chat_module import chat_with_user
+from memory_module import load_user_data, save_user_data
+
+
+# Initialize Text-to-Speech engine
+engine = pyttsx3.init()
+voices = engine.getProperty('voices')
+engine.setProperty('voice', voices[0].id)
+
+# Load NLP model for adaptability
+chatbot = pipeline("conversational", model="microsoft/DialoGPT-medium")
+sentiment_analyzer = pipeline("sentiment-analysis")
+
+def spell_correct(input_text):
+    blob = TextBlob(input_text)
+    return str(blob.correct())
+
+class IntelligentJarvis:
+    def __init__(self):
+        self.user_data = self.load_user_data()
+        self.init_web_browser()
+        self.setup_reminders()
+
+    def init_web_browser(self):
+        if sys.platform.startswith("linux"):
+            self.chrome_path = '/usr/bin/google-chrome'
+        elif sys.platform == "darwin":
+            self.chrome_path = 'open -a /Applications/Google\\ Chrome.app'
+        elif sys.platform.startswith("win"):
+            self.chrome_path = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+        else:
+            print('Unsupported OS')
+            exit(1)
+        webbrowser.register('chrome', None, webbrowser.BackgroundBrowser(self.chrome_path))
+
+    def load_user_data(self):
+        try:
+            with open('user_data.json', 'r') as file:
+                return json.load(file)
+        except FileNotFoundError:
+            return {}
+
+    def save_user_data(self):
+        with open('user_data.json', 'w') as file:
+            json.dump(self.user_data, file)
+
+    def setup_reminders(self):
+        reminders = self.user_data.get('reminders', [])
+        for reminder in reminders:
+            schedule.every().day.at(reminder['time']).do(self.send_reminder, reminder['message'])
+
+    def send_reminder(self, message):
+        speak(f"Reminder: {message}")
+
+    def wish_user(self):
+        hour = int(datetime.datetime.now().hour)
+        if hour < 12:
+            greet = "Good Morning"
+        elif hour < 18:
+            greet = "Good Afternoon"
+        else:
+            greet = "Good Evening"
+
+        speak(f"{greet}, {self.user_data.get('name', 'Sir')}! How can I assist you today?")
+
+    def interpret_query(self, query):
+        query = spell_correct(query)
+        sentiment = sentiment_analyzer(query)[0]
+        if sentiment['label'] == 'NEGATIVE':
+            speak("I sense some negativity. I'm here to help if you need me.")
+        
+        # Integrate NLP model for open-ended queries
+        if 'search' in query or 'find' in query:
+            speak('What would you like me to search for?')
+            search_query = takeCommand()
+            url = f'https://google.com/search?q={search_query}'
+            webbrowser.get('chrome').open_new_tab(url)
+            speak(f"Here are the results for {search_query}.")
+
+        elif 'news' in query:
+            speak('Fetching the latest news...')
+            # Placeholder for news function
+            speak("Here's the top headline: ...")
+
+        elif 'remember' in query:
+            speak("What should I remember?")
+            memory = takeCommand()
+            self.user_data['memory'] = memory
+            self.save_user_data()
+            speak(f"I will remember this: {memory}.")
+
+        elif 'recall' in query or 'remember anything' in query:
+            memory = self.user_data.get('memory', 'I do not have anything to recall.')
+            speak(memory)
+
+        elif 'chat' in query or 'talk' in query:
+            speak('Sure! Let\'s talk. What\'s on your mind?')
+            user_input = takeCommand()
+            response = chatbot(user_input)
+            speak(response[0]['generated_text'])
+
+        elif 'add reminder' in query:
+            speak("What should I remind you about?")
+            message = takeCommand()
+            speak("At what time should I remind you? Please specify in HH:MM format.")
+            reminder_time = takeCommand()
+            self.user_data.setdefault('reminders', []).append({"message": message, "time": reminder_time})
+            self.save_user_data()
+            schedule.every().day.at(reminder_time).do(self.send_reminder, message)
+            speak(f"Reminder set for {reminder_time}.")
+
+        else:
+            speak("I'm not sure how to handle that request. I'm learning every day!")
+
+    def handle_command(self, command):
+        if 'wikipedia' in command:
+            speak('Searching Wikipedia...')
+            command = command.replace('wikipedia', '')
+            results = wikipedia.summary(command, sentences=2)
+            speak(results)
+        elif 'open youtube' in command:
+            webbrowser.get('chrome').open_new_tab('https://youtube.com')
+        elif 'play music' in command:
+            os.startfile("D:\\Music\\favorite.mp3")
+        elif 'time' in command:
+            current_time = datetime.datetime.now().strftime("%H:%M:%S")
+            speak(f"The time is {current_time}.")
+        else:
+            self.interpret_query(command)
+
+    def start(self):
+        self.wish_user()
+        while True:
+            schedule.run_pending()
+            command = takeCommand().lower()
+            if 'exit' in command or 'shutdown' in command:
+                speak("Goodbye! Have a great day.")
+                self.save_user_data()
+                sys.exit()
+            else:
+                self.handle_command(command)
+
+if __name__ == '__main__':
+    assistant = IntelligentJarvis()
+    assistant.start()

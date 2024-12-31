@@ -11,6 +11,12 @@ from helpers import speak, takeCommand, weather, cpu, joke, screenshot  # Modula
 import json
 from textblob import TextBlob
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from speech_module import speak, takeCommand
+from weather_module import get_weather
+from news_module import get_top_news
+from sentiment_analysis import analyze_sentiment
+from chat_module import chat_with_user
+from memory_module import load_user_data, save_user_data
 
 # Initialize Text-to-Speech engine
 engine = pyttsx3.init()
